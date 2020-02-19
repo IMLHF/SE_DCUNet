@@ -60,7 +60,7 @@ class Unet(nn.Module):
 
         # Last decoder doesn't use BN & LeakyReLU. Use bias.
         self.last_decoder = dcnn.ComplexConvWrapper(nn.ConvTranspose2d,
-                *cfg['decoders'][-1], bias=True)
+                                                    *cfg['decoders'][-1], bias=True)
 
         self.ratio_mask_type = cfg['ratio_mask']
 
@@ -68,7 +68,23 @@ class Unet(nn.Module):
         def inner_fn(r, i):
             if self.ratio_mask_type == 'BDSS':
                 return torch.sigmoid(outr) * r, torch.sigmoid(outi) * i
-            else:
+            elif self.ratio_mask_type == 'UBD':
+                # (r*outr-i*outi) + (r*outi+i*outr)j
+                return r*outr-i*outi, r*outi+i*outr
+            elif self.ratio_mask_type == 'BDT':
+                out_mag = torch.sqrt(outi**2 + outr**2)
+                out_angle = torch.atan2(outi, outr)
+                B_out_mag = torch.tanh(out_mag)
+
+                in_mag = torch.sqrt(i**2 + r**2)
+                in_angle = torch.atan2(i, r)
+
+                masked_out_mag = in_mag * B_out_mag
+                masked_out_angle = out_angle+in_angle
+                r_masked_out = masked_out_mag*torch.cos(masked_out_angle)
+                i_masked_out = masked_out_mag*torch.sin(masked_out_angle)
+                return r_masked_out, i_masked_out
+                '''
                 # Polar cordinate masks
                 # x1.4 slower
                 mag_mask = torch.sqrt(outr**2 + outi**2)
@@ -85,6 +101,7 @@ class Unet(nn.Module):
 
                 # return real, imag
                 return mag * torch.cos(phase), mag * torch.sin(phase)
+                '''
 
         return inner_fn
 
