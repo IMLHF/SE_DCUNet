@@ -20,13 +20,13 @@ from torch.utils.data import DataLoader
 
 
 parser = argparse.ArgumentParser()
-parser.add_argument('--model_dir', default='exp/unet16.json', help="Directory containing params.json")
-parser.add_argument('--restore_file', default=None, help="Optional, name of the file in --model_dir containing weights to reload before training")  # 'best' or 'train'
+parser.add_argument('--conf', default='exp/unet16.json', help="Directory containing params.json")
+parser.add_argument('--restore_file', default=None, help="Optional, containing weights to reload before training")  # 'best' or 'train'
 parser.add_argument('--batch_size', default=64, type=int, help='train batch size')
-parser.add_argument('--num_epochs', default=120, type=int, help='train epochs number')
+parser.add_argument('--num_epochs', default=1200, type=int, help='train epochs number')
 args = parser.parse_args()
 
-n_fft, hop_length = 400, 160
+n_fft, hop_length = 1024, 256
 window = torch.hann_window(n_fft).cuda()
 def stft(x):
     return torch.stft(x, n_fft, hop_length, window=window)
@@ -61,13 +61,14 @@ def wSDRLoss(mixed, clean, clean_est, eps=2e-7):
 # TODO - option for (noise/reverb/noise+reverb)
 
 def main():
-    json_path = os.path.join(args.model_dir)
+    json_path = os.path.join(args.conf)
     params = utils.Params(json_path)
 
     net = Unet(params.model).cuda()
     # TODO - check exists
-    #checkpoint = torch.load('./final.pth.tar')
-    #net.load_state_dict(checkpoint)
+    # if os.path.exists('./ckpt/final.pth.tar'):
+    #     checkpoint = torch.load('./ckpt/final.pth.tar')
+    #     net.load_state_dict(checkpoint)
 
     train_dataset = AudioDataset(data_type='train')
     # test_dataset = AudioDataset(data_type='val')
@@ -76,12 +77,15 @@ def main():
     # test_data_loader = DataLoader(dataset=test_dataset, batch_size=args.batch_size,
     #                               collate_fn=test_dataset.collate, shuffle=False, num_workers=4)
 
-    torch.set_printoptions(precision=10, profile="full")
+    # torch.set_printoptions(precision=10, profile="full")
 
     # Optimizer
-    optimizer = optim.Adam(net.parameters(), lr=1e-3)
+    optimizer = optim.Adam(net.parameters(), lr=1e-2)
     # Learning rate scheduler
-    scheduler = ExponentialLR(optimizer, 0.95)
+    scheduler = ExponentialLR(optimizer, 0.996)
+
+    if not os.path.exists('ckpt'): # model save dir
+        os.mkdir('ckpt')
 
     for epoch in range(1, args.num_epochs+1):
         train_bar = tqdm(train_data_loader, ncols=60)
@@ -97,9 +101,9 @@ def main():
             out_audio = torch.squeeze(out_audio, dim=1)
             for i, l in enumerate(seq_len):
                 out_audio[i, l:] = 0
-            librosa.output.write_wav('mixed.wav', train_mixed[0].cpu().data.numpy()[:seq_len[0].cpu().data.numpy()], 16000)
-            librosa.output.write_wav('clean.wav', train_clean[0].cpu().data.numpy()[:seq_len[0].cpu().data.numpy()], 16000)
-            librosa.output.write_wav('out.wav', out_audio[0].cpu().data.numpy()[:seq_len[0].cpu().data.numpy()], 16000)
+            # librosa.output.write_wav('mixed.wav', train_mixed[0].cpu().data.numpy()[:seq_len[0].cpu().data.numpy()], 16000)
+            # librosa.output.write_wav('clean.wav', train_clean[0].cpu().data.numpy()[:seq_len[0].cpu().data.numpy()], 16000)
+            # librosa.output.write_wav('out.wav', out_audio[0].cpu().data.numpy()[:seq_len[0].cpu().data.numpy()], 16000)
             loss = wSDRLoss(train_mixed, train_clean, out_audio)
             # print(epoch, loss.item(), end='', flush=True)
             loss_sum += loss.item()
@@ -112,7 +116,8 @@ def main():
         avg_loss = loss_sum / step_cnt
         print('epoch %d> Avg_loss: %.6f.\n' % (epoch, avg_loss))
         scheduler.step()
-    torch.save(net.state_dict(), './final.pth.tar')
+        if epoch %20 == 0:
+            torch.save(net.state_dict(), './ckpt/step%05d.pth.tar' % epoch)
 
 if __name__ == '__main__':
     main()
