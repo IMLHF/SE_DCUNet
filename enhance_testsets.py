@@ -21,8 +21,8 @@ from torch.utils.data import DataLoader
 
 
 parser = argparse.ArgumentParser()
+parser.add_argument('--ckpt', default='ckpt/xxx', help="ckpt dir")
 parser.add_argument('--model_dir', default='exp/unet16.json', help="Directory containing params.json")
-parser.add_argument('--restore_file', default=None, help="Optional, name of the file in --model_dir containing weights to reload before training")  # 'best' or 'train'
 args = parser.parse_args()
 
 n_fft, hop_length = 1024, 256
@@ -38,7 +38,7 @@ def main():
 
     net = Unet(params.model).cuda()
     # TODO - check exists
-    checkpoint = torch.load('./final.pth.tar')
+    checkpoint = torch.load(args.ckpt)
     net.load_state_dict(checkpoint)
 
     # train_dataset = AudioDataset(data_type='train')
